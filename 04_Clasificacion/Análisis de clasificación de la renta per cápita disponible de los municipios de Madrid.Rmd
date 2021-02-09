@@ -1,0 +1,371 @@
+---
+title: Análisis de clasificación de la renta per cápita disponible de los municipios
+  de Madrid
+author: "Sara Bengoechea Rodríguez e Inés Martínez Pereda"
+date: "11/17/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+# Introducción
+
+El presente proyecto tiene como objetivo llevar a cabo un análisis de clasificación de la renta per cápita disponible de los municipios de Madrid. En este se desarrollarán distintos modelos para predecir si dichos municipios tendrán una renta per cápita superior o inferior a la media.
+
+
+# Importación de las librerías necesarias
+
+```{r, libraries}
+library(dplyr)
+library(readxl)
+library(skimr)
+library(MASS) # Para LDA
+library(klaR) # Para gráficos de partición
+```
+
+
+# Importación y visualización de datos
+
+Importación de datos y visualización de columnas.
+
+Las variables son:
+
+-Indicador de renta disponible bruta municipal per cápita (euros)
+-Paro registrado por 100 hab 
+-Valor catastral por unidad urbana 	
+-Población empadronada 	
+-Comercio y hostelería (Ocupados por 1.000 h )	
+-Administración pública, educación y sanidad	
+-Centros escolares (2012)	
+-Densidad de edificios por km^2	
+-Energía eléctrica facturada per cápita (KW/hora) 
+
+```{r, import data}
+data <- read_excel("data.xlsx")
+colnames(data)
+```
+
+Cambiamos el nombre de las variables.
+
+```{r}
+names(data)[2] <- "renta"
+names(data)[3] <- "paro_por_100hab"
+names(data)[4] <- "valor_catastral"
+names(data)[5] <- "poblacion"
+names(data)[6] <- "comercio_hosteleria"
+names(data)[7] <- "administracion_publica_educación_sanidad"
+names(data)[8] <- "colegios"
+names(data)[9] <- "edificios_densidad"
+names(data)[10] <- "energia_per_capita"
+colnames(data)
+```
+
+# Análisis exploratorio de la renta per cápita por municipios y definición de la variable target
+
+Los estadísticos más relevantes de nuestra variable target son los siguientes.
+
+```{r}
+summary(data$renta)
+```
+
+En el histograma se puede ver cómo la mayor parte de valores está por debajo de la renta media. No sigue una distribución normal, es asimétrica hacia la derecha.
+
+```{r}
+attach(data)
+hist(renta, probability = T, col = "light blue",main = "Histograma de la renta frente a la renta media")
+lines(density(renta), col ="red")
+abline(v = mean(renta), lwd = 2, lty = "dashed")
+```
+
+Con el boxplot vemos la gran dispersión de esta variable y los muchos outliers superiores que hay, que distorsionan la renta media.
+
+
+```{r}
+
+boxplot(renta, col = "orange")
+
+
+```
+
+Con la media de la renta establecemos la variable dummy que toma los valores "superior" e "inferior" y visualizamos el resultado.
+
+```{r}
+u <- mean(data$renta) # Hayamos la renta media per cápita de los municipios
+
+data$renta_media <- ifelse(data[2] > u, "superior", "inferior") # Creamos dummy
+
+data <- data %>% mutate(renta_media = factor(renta_media, levels = c("superior", "inferior"))) # convertimos en factor
+
+head(data)
+```
+
+Los datos están divididos en un 36% de municipios cuya renta per cápita es superior a la media frente a un 64% que es inferior. 
+
+```{r}
+
+count_renta <- data %>% count(renta_media) # Creamos dataframe para obtener % de renta superior e inferior
+
+count_renta["extra"] <- "a" # añadimos col extra
+
+
+count_renta <- group_by(count_renta, extra) %>% mutate(percent = round(n/sum(n),2))
+count_renta["extra"] <- NULL
+count_renta
+
+
+library(plotrix)
+slices <- c(65, 114)
+lbls <- c("superior a la media:
+      36%", "inferior a la media:   
+      64%")
+pie(slices,labels=lbls,
+   main="Renta per cápita en Madrid")
+
+
+```
+
+Eliminamos columna de la renta numérica
+
+```{r}
+
+data["renta"] <- NULL  # Eliminamos la columna numérica de renta
+head(data)
+
+```
+
+
+# Selección de variables meidante step AIC
+
+Mediante el procedimiento de step_aic (direction = "both"), obtenemos que el mejor modelo que contiene un total de 6 variables. De las 8 variables iniciales con las que contábamos, todas ayudan a predecir en nuestro modelo excepto comercio_hosteleria y edificios_densidad. 
+
+```{r}
+# Creamos un modelo con todas las varibles excepto Municipios
+
+model_all <- glm(renta_media ~. -Municipios, family = binomial(link = logit), data = data)
+summary(model_all)
+stepAIC(model_all, direction = "both")
+
+
+```
+
+
+Por lo que eliminamos de nuestro dataset las dos variables que no necesitamos
+
+```{r}
+data$comercio_hosteleria <- NULL
+data$edificios_densidad <- NULL
+colnames(data)
+
+```
+
+# Análisis exploratorio de las variables seleccionadas frente a la variable target
+
+Tras observar los boxplots, Las variables donde, a nivel visual, es significativo el nivel de renta per cápita, son el paro por cada 100 habitantes, el valor catastral y la administración pública, educación y sanidad.
+
+```{r}
+summary(data)
+attach(data)
+par(mfrow = c(2,3))
+boxplot(paro_por_100hab~renta_media, col = "orange")
+boxplot(valor_catastral~renta_media, col = "orange")
+boxplot(poblacion~renta_media, col = "orange")
+boxplot(administracion_publica_educación_sanidad~renta_media, col = "orange")
+boxplot(colegios~renta_media, col = "orange")
+boxplot(energia_per_capita~renta_media, col = "orange")
+
+
+```
+
+Podemos ver que la única variable que sigue una distribución normal es el paro, mientras que las demás son asimétricas hacia la derecha. Además, se pueden apreciar outliers en las variables de la población, administración pública, educación y sanidad, colegios y la energía per cápita.
+
+```{r}
+par(mfrow = c(2,3))
+hist(paro_por_100hab, col = "light blue")
+hist(valor_catastral, col = "light blue")
+hist(poblacion, col = "light blue")
+hist(administracion_publica_educación_sanidad, col = "light blue")
+hist(colegios, col = "light blue")
+hist(energia_per_capita, col = "light blue")
+
+```
+
+# Regresion logistica(logit)
+
+```{r}
+
+model_RL <- glm(formula = renta_media ~ paro_por_100hab + valor_catastral + 
+    poblacion + administracion_publica_educación_sanidad + colegios + 
+    energia_per_capita, family = binomial(link = logit), data = data)
+
+summary(model_RL)
+```
+
+Matriz de confusion para RL
+
+```{r}
+fit.pred <- ifelse(model_RL$fitted.values > 0.5, 1, 0)
+
+matriz_RL <- table(fit.pred, data$renta_media)
+matriz_RL
+```
+
+La precisión del modelo de regresión logística es del 83.24%.
+
+```{r}
+(matriz_RL[1,1] + matriz_RL[2,2])/sum(matriz_RL)
+
+```
+
+Ya que muy pocas de las variables son significativas, probamos a realizar un logit solo con las variables significativas. Su accuracy es ligeramente menor: 82.68% frente a 83.24%. Por lo tanto, nos quedamos con el modelo seleccionado median AIC.
+
+```{r, logit solo con las significativas}
+model_RL_signif <- glm(renta_media ~ paro_por_100hab + valor_catastral + administracion_publica_educación_sanidad + colegios, family = binomial(link = logit))
+
+summary(model_RL_signif)
+
+fit.pred_signif <- ifelse(model_RL_signif$fitted.values > 0.5, 1, 0)
+
+matriz_RL_signif <- table(fit.pred_signif, data$renta_media)
+matriz_RL_signif
+
+(matriz_RL_signif[1,1] + matriz_RL_signif[2,2])/sum(matriz_RL_signif)
+```
+
+# Análisis de Discriminante Lineal (LDA)
+
+```{r}
+model_LDA <- lda(renta_media ~ paro_por_100hab + valor_catastral + 
+    poblacion + administracion_publica_educación_sanidad + colegios + 
+    energia_per_capita, data = data)
+
+model_LDA
+
+```
+
+La matriz de confusión es la siguiente:
+
+```{r}
+# Prediccion respuesta
+ldaResult <- predict(model_LDA, newdata = data) 
+
+# Matriz de confusion
+matriz_LDA <- table(ldaResult$class, data$renta_media) 
+matriz_LDA
+```
+
+La precisión del modelo de LDA es de 83.79%, ligeramente mejor este modelo que el de regresión, un 1,11% mejor.
+
+```{r}
+#Cálculo de la precisión del modelo de LDA
+sum(diag(matriz_LDA))/sum(matriz_LDA) 
+
+```
+
+A continuación se muestran los gráficos de partición de LDA. En rojo aparecen aquellas observaciones que estarían clasificadas de manera errónea. La variable paro_por_100hab es la que tiene menor ratio de error.
+
+```{r}
+
+# Graficos de particion LDA
+partimat(data[,-c(1, 8)], renta_media, data=data,method="lda", main="Partition Plots LDA")
+
+```
+
+
+# Análisis Discriminante Cuadrático (QDA)
+
+```{r}
+model_QDA <- qda(renta_media ~ paro_por_100hab + valor_catastral + 
+    poblacion + administracion_publica_educación_sanidad + colegios + 
+    energia_per_capita, data = data)
+
+model_QDA
+
+```
+
+
+A continuación se muestra la matriz de confusión para el modelo QDA y su precisión, que es de 79,88%. En este caso, este modelo es menos preciso que los anteriores.
+
+
+```{r}
+# Prediccion respuesta
+qdaResult <- predict(model_QDA, newdata = data) 
+
+# Matriz de confusion
+Matriz_QDA <- table(qdaResult$class, data$renta_media) 
+Matriz_QDA
+
+sum(diag(Matriz_QDA))/sum(Matriz_QDA)
+```
+
+A continuación se muestran los gráficos de partición de QDA. Como anteriormente, en rojo aparecen aquellas observaciones que estarían clasificadas de manera errónea. La variable paro_por_100hab es también la que tiene menor ratio de error.
+
+```{r}
+partimat(data[,-c(1, 8)], renta_media, data = data, method = "qda",main = "Partition Plots QDA")
+```
+# Árbol de decisión
+
+
+Llevamos a cabo un árbol de decisión mediante la función rpart. La interpretación de dicho árbol es la siguiente:
+
+- Si el paro por cada 100 habitantes del municipio es superior a 11, la renta per cápita de este será inferior a la media.
+- Si el paro por cada 100 habitantes es inferior a 11 y la población es menor a 4,219 este municipio tendrá una renta per cápita inferior a la media.
+- Si el paro por cada 100 habitantes es inferior a 11 y la población es mayor o igual a 4219 este municipio tendrá una renta per cápita superior a la media.
+
+
+```{r}
+library(rpart)      
+library(rpart.plot) 
+
+arbol_1 <- rpart(renta_media~.-Municipios, method = "class", data = data)
+
+rpart.plot(arbol_1, extra = 4)
+
+printcp(arbol_1)
+```
+
+La evolución del error a medida que se incrementan los nodos se representa mediante la gráfica que aparece debajo.
+
+```{r}
+plotcp(arbol_1)
+
+```
+
+Llevamos a cabo la matriz de confusión y la precisión del árbol. Obtenemos una precisión del 88.82%, siendo este el método de mayor precisión.
+
+```{r}
+arbolresult <- predict(arbol_1, newdata = data, type = "class") # Predice clasificando entre yes y no
+
+# Matriz de confusi?n
+matriz_arbol<-table(arbolresult, data$renta_media)
+matriz_arbol
+
+# Porcentaje de aciertos
+sum(diag(matriz_arbol))/sum(matriz_arbol)
+
+
+rm(t1)
+rm(predrpart)
+```
+
+Probamos a realizar una poda del árbol, sin embargo vemos que el árbol óptimo es el que se ha mostrado anteriormente.
+
+```{r}
+optimo_automatic_arboldata_1 <- prune(arbol_1, cp = arbol_1$cptable[which.min(arbol_1$cptable[,"xerror"]),"CP"])
+
+rpart.plot(optimo_automatic_arboldata_1, extra = 4, main = "árbol automático")
+
+plotcp(optimo_automatic_arboldata_1)
+```
+
+
+# Conclusiones:
+
+Dadas las características del dataset, el modelo con mayor precisión, y por tanto, el más adecuado es el modelo de árbol de decisión con un 88.82% de precisión.
+
+
+
