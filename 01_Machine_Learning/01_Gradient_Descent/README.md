@@ -1,0 +1,1 @@
+Este proyecto consiste en el descenso de gradiente en lenguaje de programación Python utilizando las librerías numpy, pandas y seaborn.
