@@ -1,0 +1,185 @@
+---
+title: "Análisis de Correspondencias: Situación laboral y recuento de votos"
+author: "Sara Bengoechea Rodríguez"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## Introducción 
+
+El objetivo del presente informe es conocer la relación entre la preferencia política y la situación laboral de los españoles mayores de edad a partir de los datos proporcionados por los participantes en una encuesta.
+
+La tabla de contingencia sería la siguiente:
+
+```{r libraries, include = FALSE}
+require(ggplot2)
+require(FactoMineR)
+require(factoextra)
+require(gplots)
+library(corrplot) # Para corrplot
+```
+
+
+```{r importacion datos}
+votos <- read.csv("AFC-votos.csv", sep = ";", row.names = "X")
+votos <- as.table(as.matrix(votos))
+votos
+
+```
+
+## Análisis exploratorio de datos
+
+Antes de realizar el análisis de correspondencias debemos prestar atención a la concentración e importancia relativa de las filas y columnas mediante el siguiente gráfico:
+
+
+```{r representación gráfica, out.width = '70%'}
+balloonplot(t(votos), main = "Votos", xlab = "", ylab="", label = FALSE, show.margins = FALSE)
+```
+
+## Análisis de correspondencias
+
+Para poder analizar de manera sencilla las correlaciones entre las filas y las columnas realizamos un análisis de correspondencias. El siguiente resumen muestra los aspectos principales de este, que estudiaremos con detenimiento a continuación.
+
+```{r}
+votos.afc=CA(votos, graph= FALSE)
+summary(votos.afc, nb.dec = 2, ncp = 2) # nb.dec es el numero de decimales
+```
+## Interpretación del análisis de correspondencias
+
+### Nivel de asociación entre filas y columnas
+
+Mediante la raíz cuadrada de la traza obtenemos el coeficiente de correlación entre filas y columnas y con el Chi cuadrado estudiamos la independencia entre estas. Dado que el coeficiente de correlación está por encima de 0.2 y que el  p-valor es muy cercano a cero y que la Chi cuadrado para 16 grados de libertad es de 1704.3, podemos rechazar la hipótesis nula. Por lo tanto, no existe independencia entre las filas y las columnas.
+
+```{r}
+autov = get_eigenvalue(votos.afc)
+traza = sum(autov[,1]) 
+cor.coef = sqrt(traza)
+cor.coef
+```
+
+```{r, Chi cuadrado}
+chisq=chisq.test(votos)
+
+chisq
+```
+
+### Autovalores y gráfico de sedimentación
+
+Mediante el examen de autovalores vemos que para poder explicar el 100% de la varianza necesitaríamos 4 dimensiones. Sin embargo, dado que con solo 2 dimensiones se explica un 89% y nuestro objetivo principal es la reducción de estas y su representación en un espacion de dos dimensiones respetando las posiciones relativas entre los elementos, nos quedaremos solo con estas dos dimensiones. Mediante el siguiente gráfico podemos comprender lo explicado anteriormente de manera visual.
+
+```{r, autovalores, include= FALSE}
+autoval = get_eigenvalue(votos.afc)
+head(round(autoval, 2))
+```
+
+
+```{r, out.width = '70%', fig.align= "center"}
+fviz_screeplot(votos.afc) +
+  ggtitle("Gráfico de sedimentación") +
+  labs(x = "Dimensiones", y = "Porcentaje de varianza explicada")
+```
+
+### Gráfico de dispersión del análisis de correspondencias entre filas y columnas.
+
+Gracias al gráfico de dispersión podemos intuir la relación entre los elementos de las filas con los ejes y la de los puntos de columna con los mismos ejes, atendiento a la distancia entre los puntos.
+
+
+```{r, dispersión 1, out.width = '70%', fig.align= "center"}
+plot.CA(votos.afc, axes = c(1,2), col.row = "blue", col.col = "red")
+
+```
+
+### Contribución de filas y columnas
+
+
+```{r, Contribución, include = FALSE}
+filas=get_ca_row(votos.afc)
+filas
+columnas = get_ca_col(votos.afc)
+columnas
+```
+
+```{r, include= FALSE}
+head(filas$coord)
+```
+
+
+Para estudiar la contribución de las filas y de las columnas a cada dimensión se muestran los dos siguientes corrplots. Cabe destacar que, aunque algunas filas y columnas contribuyan mucho a las dimensiones 3 y 4, esto no nos debe preocupar dado que dichas dimensiones solo explican un 10.9% de la varianza total.
+
+
+```{r, contrib, include= FALSE}
+head(filas$contrib)
+```
+
+
+```{r, out.width = '55%'}
+corrplot(filas$contrib, is.corr = FALSE)
+corrplot(columnas$contrib, is.corr = FALSE)
+```
+
+```{r, include= FALSE}
+# Contribución de las filas a la primera dimensión
+fviz_contrib(votos.afc, choice = "row", axes = 1)+
+        ggtitle("Contribución de las filas a la 1ª dimensión")+
+        labs(x="Filas",y="Porcentaje de contribución")  
+```
+
+```{r, include= FALSE}
+# Contribución de las filas a la segunda dimensión
+fviz_contrib(votos.afc, choice = "row", axes = 2) +
+        ggtitle("Contribución de las filas a la 2ª dimensión")+
+        labs(x="Filas",y="Porcentaje de contribución")
+```
+
+```{r, include = FALSE}
+# Contribución total de las filas a las dos dimensiones
+fviz_contrib(votos.afc, choice = "row", axes = 1:2) +
+        ggtitle("Contribución de las filas a las dos dimensiones")+
+        labs(x="Filas",y="Porcentaje de contribución")
+```
+
+
+### Calidad de la representación de las filas: el Cos2
+
+Mediante el cos2 estudiamos la calidad de la representación de las variables sobre el mapa factorial, mide la asociación entre las variables y un eje. Gracias a este, podemos ver cómo efectivamente con la dimensión 1 y 2 se puede realizar una buena reducción, ya que los valores mayores del cos2 de las filas y las columnas están en dichas dimensiones.
+
+```{r, include= FALSE}
+head(filas$cos2)
+```
+
+```{r, out.width= "55%"}
+corrplot(filas$cos2, is.corr=FALSE)
+corrplot(columnas$cos2, is.corr=FALSE)
+```
+
+```{r, include = FALSE}
+# Cos2 de las filas en las dos dimensiones
+fviz_cos2(votos.afc, choice = "row", axes = 1:2)+
+        ggtitle("Cos2 de las dos dimensiones")+
+        labs(y="Cos2 - calidad de la representación")
+```
+
+### Análisis de correspondencias simples. Gráfico asimétrico.
+
+Por último, debemos estudiar la asociación entre los grupos según su situación laboral y los votos. Un ángulo agudo señala una alta asociación entre el punto de la fila y el de la columna. Por lo tanto, existe mayor asociación entre los votantes de PP y PSOE con las filas de jubilado y doméstico; UP está más asociado con parado y trabaja; estudiante está asociado con la columna "resto" y finalmente, Ciudadanos no tiene ninguna asociación clara con ningún grupo de los estudiados.
+
+
+```{r, 5, out.width = '70%', fig.align= "center"}
+fviz_ca_biplot(votos.afc, map = "rowprincipal", arrow = c(TRUE, TRUE))+ 
+        ggtitle("Análisis de correspondencias simples. Gráfico asimétrico.") 
+```
+
+```{r, 6, include = FALSE}
+fviz_ca_biplot(votos.afc, map ="colgreen",
+               arrow = c(TRUE, FALSE))
+```
+
+
+
+

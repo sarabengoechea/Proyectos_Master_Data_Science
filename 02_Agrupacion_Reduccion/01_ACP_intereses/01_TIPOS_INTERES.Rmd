@@ -1,0 +1,260 @@
+---
+title: "Estructura temporal subyacente de los tipos de interés"
+author: "Sara Bengoechea Rodríguez"
+date: "11/8/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## Introducción 
+
+El objetivo de este trabajo es realizar una comprobación empírica del Análisis de Componentes Principales a un conjunto de 978 observaciones de los rendimientos de 10 bonos norteamericanos a distintos plazos entre el 2 de enero de 1995 y el 30 de septiembre de 1998.
+
+
+```{r Carga de librerías, include=FALSE}
+library(ggplot2)
+library(factoextra)
+library(FactoMineR)
+library(reshape2)
+library(Hmisc) # Para matriz nds
+library(corrplot) # Para corrplot
+library(PerformanceAnalytics) # Para chart de correlaciones con histogramas y scaterplots
+library(psych) # Para esfericidad de Barlett
+library(rela) # Para KMO
+library(pls) # Para pcr function
+```
+
+
+
+```{r carga de datos, include=FALSE}
+TIUSD = read.csv("ACPTIUSD.csv", sep = ";")
+head(TIUSD)
+tail(TIUSD)
+```
+
+## Análisis exploratorio y estudio de idoneidad del ACP
+
+__Distribución__
+
+Mediante el siguiente gráfico observamos la distribución de las variables.
+```{r, echo = FALSE}
+# Visualización
+TIUSD2 = TIUSD[complete.cases(TIUSD), ] # Creamos un data frame sin NAs
+TIUSD2$Fechas = as.Date(TIUSD2$X, format = "%d/%m/%Y") # Crea col en formato fecha al final de la tabla
+TIUSD2 = TIUSD2[,2:12]
+
+
+data_long = melt(TIUSD2, id = "Fechas") # Para estirar el dataframe
+
+# Observamos la distr de las variables
+ggplot(data = data_long, aes(x = Fechas, y = value,  color = variable)) +
+  #geom_line()
+  geom_point(alpha = 0.3,  position = position_jitter()) +  #stat_smooth(method = "lm") +
+  labs(y = "Tipo", colour = "Bono") 
+
+```
+
+
+```{r, include= FALSE}
+TIUSD.act = TIUSD[1:949, 1:9] # Creamos un data frame con las observaciones activas (training)
+head(TIUSD.act)
+str(TIUSD.act)
+
+# Eliminamos fechas 
+
+Dates = as.Date(TIUSD.act$X, format = "%d/%m/%y") #creamos un vector de fechas...
+TIUSD.act = TIUSD.act[,-1] #... para extraer la primera columna (de fechas) del objeto de trabajo y asi hacer summary
+head(Dates)
+str(Dates)
+```
+
+__Summary__
+
+Visualizamos un resumen de los estadísticos más relevantes de las variables de nuestro dataset.
+
+```{r}
+TIUSD.act_stats = data.frame(
+  Min = apply(TIUSD.act, 2, min, na.rm = TRUE), # mín
+  Q1 = apply(TIUSD.act, 2, quantile, 1/4, na.rm = TRUE), # 1er cuartil
+  Med = apply(TIUSD.act, 2, median, na.rm = TRUE), # mediana
+  Mean = apply(TIUSD.act, 2, mean, na.rm = TRUE), # media
+  SD = apply(TIUSD.act, 2, sd), # Desviación típica
+  Q3 = apply(TIUSD.act, 2, quantile, 3/4, na.rm = TRUE), # 3er cuartil
+  Max = apply(TIUSD.act, 2, max, na.rm = TRUE) # Máx
+)
+TIUSD.act_stats = round(TIUSD.act_stats, 1)
+TIUSD.act_stats
+```
+
+__Análisis de la matriz de correlación__
+
+
+```{r, include = FALSE}
+cor.mat = round(cor(TIUSD.act),2) 
+cor.mat # Hay NAs, no nos sive
+```
+
+```{r, include= FALSE}
+cor.mat = round(cor(TIUSD.act, use = "complete.obs"),2) # Matriz de correlación sin NAs
+cor.mat
+```
+
+La primera matriz indica el grado de correlación que hay entre las variables, que en este caso es alto, y la segunda matriz informa el número de observaciones. Por último, al observar la última matriz, no podemos decir que haya incorrelación entre las variables ya que se rechaza la H por nds = 0.
+
+```{r}
+cor.mat.nds = rcorr(as.matrix(TIUSD.act))
+cor.mat.nds
+```
+
+El siguiente paso es obtener el determinante de la matriz de correlaciones. Dado que dicho resultado está muy cercano a cero, significa que existe mucha asociación entre las variables del dataset.
+
+```{r}
+det(cor.mat)
+```
+
+__Correlogramas__
+
+A continuación se muestra un correlograma para así poder apreciar de manera más visual qué variables están más correlacionadas entre sí. Lo más destacable es la correlación existente entre las variables que se encuentran entre DEPO.12M e IRS.5Y.
+
+```{r}
+corrplot::corrplot(cor.mat, type = "lower", order = "original", 
+         tl.col = "black", tl.cex = 0.7, tl.srt = 45) 
+
+# las correlaciones positivas en azul, las negativas en rojo
+#type=lower hace ref a cómo queremos visualizar la matriz, si por debajo,
+         #completa o por encima de la diagonal principal;
+         # Method cambia la salida; probar "pie", "number" o "color"
+
+```
+
+Por otro lado, si estamos interesados en visualizar clusters, utilizaríamos el siguiente correlograma:
+
+```{r}
+corrplot::corrplot(cor.mat, type = "full", order = "hclust", addrect = 3,
+         tl.col = "black", tl.cex = 0.7, tl.srt = 45) #permite visualizar clusters
+
+```
+
+Por último, podemos estudiar la correlación de manera más completa con el siguiente chart.
+
+En la diagonal podemos observar la distribución de cada variable. Por debajo de la diagonal, se encuentran diagramas de dispersión por pares con línea de ajuste. Con ello se puede apreciar si existe una relación lineal o no  para cada caso.Por encima de la diagonal aparecen los valores del coeficiente de correlación y mediante estrellas, indica el p-valor, siendo a mayor número de estrellas, menor p-valor. Lo que indica que se rechazaría la hipótesis nula, como se ha explicado anteriormente.
+
+```{r}
+chart.Correlation(TIUSD.act, histogram = TRUE, pch = 19)
+# La distribución de cada variable en la diagonal;
+# Por debajo: diagramas de dispersión por pares con línea de ajuste
+# Por encima: el valor del coef de corr con el nds como estrellas:
+# p-valores(0, 0.001, 0.01, 0.05, 0.1, 1) <=> símbolos("***", "**", "*", ".", " ")
+```
+
+__Esfericidad de Barlett__
+
+Realizamos la prueba de esfericidad de Bartlett para verificar la idoneidad del ACP. Puesto que el p.valor es muy bajo y χ2 muy alto, se rechaza la hipótesis nula, lo que indica la presencia de asociación entre las variables.
+
+En este caso, la no esfericidad es clara, sin embargo no es recomendable llevar a cabo la prueba de esfericidad de Bartlett cuando hay más de 100 observaciones.
+
+```{r}
+cortest.bartlett(TIUSD.act)
+```
+__Indice KMO de Kaiser-Meyer-Olkin__
+
+El valor obtenido está cercano a 1, lo que implica que la relación entre las variables es alta.
+
+```{r KMO necessary code, include= FALSE}
+PAF <- paf(as.matrix(TIUSD.act)) # PAF Principal Axis Factoring
+summary(PAF)
+```
+
+```{r}
+PAF$KMO
+```
+
+__Matriz de Adecuación de la Muestra (MSA)__
+
+Similar al KMO, tenemos el MSA, que estudia la relación entre las variables pero de manera más específica. Puesto que todos los valores son altos, tenemos la misma conclusión que anteriormente.
+
+```{r}
+PAF$MSA
+```
+## Análisis de componentes principales
+
+Tras el estuido previo realizado, se ha demostrado la alta correlación entre las variables. Es por ello que el Análisis de Componenetes Principales es recomendado.
+
+Realizamos el análisis de componentes principales y obtenemos un total de ocho componentes principales. Debemos prestar atención a los autovalores, que aportan información sobre la varianza explicada por cada componente.
+
+Para explicar el 100% de la varianza necesitaríamos 6 componentes, sin embargo, solo con dos componentes ya explicamos el 98.63% de la varianza.
+
+```{r, include=FALSE}
+acp = PCA(TIUSD.act, graph = T)
+```
+
+```{r}
+round(acp$eig, 2)
+```
+
+Para comprender de manera más visual el análisis de componentes podemos acudir a los siguientes gráficos.
+
+```{r}
+fviz_eig(acp, addlabels = TRUE, hjust = -0.3) +
+        labs(title = "Gráfico de sedimentación", x = "Dimensiones", y = "% Varianza explicada") + theme_minimal()
+acp_graph = PCA(TIUSD.act, graph = T)
+```
+
+
+```{r, include=FALSE}
+var = get_pca_var(acp) #factoextra
+var # Objeto con los elemento del analisis de comonentes principales
+acp # resultados del ACP en FactoMineR
+```
+
+Como se puede apreciar en las siguientes tabla de coordenadas y contribuciones, DEPO.1M está mejor explicada por la dimensión 2, mientras que las otras están mas explicadas por la dimensión 1. 
+
+```{r}
+# coordenadas y contribuciones de las variables
+var$coord
+var$contrib
+```
+
+## Rotación de variables subyacentes
+
+Al efectuar una rotación Varimax obtenemos un nuevo modelo mejor, donde los pesos de las variables se diferencian mejor, y los componentes principales explican la varianza de forma más equilibrada.
+
+
+
+```{r}
+modelo_varimax <- fa(TIUSD.act, fm = "minres", nfactors = 2, rotate = "varimax")
+print(modelo_varimax)
+```
+
+## Predicción del valor del bono a 10 años
+
+A continuación predecimos el valor del bono a 10 años con las observaciones activas para las observaciones suplementarias. Las predicciones obtenidas son las que se muestran en la tabla a continuación.
+
+```{r}
+training_data = TIUSD2[1:755, 1:10] # 96% del dataset sin NAS
+
+test_data = TIUSD2[756:783, 1:10] # 4% del dataset sin NAS
+
+ccpp <- pcr(formula = IRS.10Y ~., data = training_data, ncomp = 2)
+
+ccpp
+
+prediccion <- predict(ccpp, newdata = test_data, ncomp = 2)
+prediccion
+
+```
+
+
+## Conclusiones:
+
+- Es adecuado realizar un análisis de componentes sobre el dataset propuesto, dado el alto grado de correlación entre variables.
+
+- Para explicar adecuadamente la estructura subycente de los tipos de interés de interés es suficiente con dos coponentes principales, que en total explican un 98.63 % de la varianza.
+
+- Una rotación de variables subyacentes mediante varimax daría lugar a un modelo mejor.

@@ -1,0 +1,159 @@
+---
+title: 'Los coches del jefe: clustering'
+author: "Sara Bengoechea Rodríguez"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r, include = FALSE}
+library("memisc")
+library("lattice")
+library("MASS")
+library("Hmisc")
+library("tidyverse")
+library(factoextra) # para distancias
+library(here) # comment [//]:
+library(NbClust) # Para el número óptimo de grupos
+library(cluster) # Para agnes entre otros
+library(clustertend) # hopkins
+```
+
+# Introducción
+
+El presente informe tiene como objetivo estudiar el número adecuado de grupos en los que dividir 125 vehículos de un coleccionista y asignarlos mediante un criterio de distancia en un máximo de 10 residencias que este posee.
+
+[//]: Importamos el dataset ya editado en el anterior informe yliminamos la columna primera X que se genera sola.
+
+```{r importacion datos}
+data <- read.csv("cleaned_dataset.csv")
+data["X"] <- NULL
+```
+
+
+Tras el análisis exploratorio y la eliminación de variables del anterior informe, partimos desde el dataset resultante y generamos los estadísticos principales del mismo.
+
+[//]: Dado que la variable categórica accel2 está muy correlacionada con velocidad, como se vio en el anterior informe, prescindiremos de ella para el clustering.
+
+```{r, align= "center"}
+q_stats <- data.frame(
+  Min = apply(data[, -10], 2, min), # mínimo
+  Med = apply(data[, -10], 2, median), # mediana 
+  Mean = apply(data[, -10], 2, mean), # media
+  SD = apply(data[, -10], 2, sd), # Desviación típica 
+  Max = apply(data[, -10], 2, max) # Máximo
+)
+
+q_stats <- round(q_stats, 1) 
+head(q_stats, 9)
+
+```
+
+[//]: Ya que nuestro objetivo es realizar un análisis cluster, previamente debemos escalar las variables.
+
+```{r, include = FALSE}
+
+performScaling = T 
+if (performScaling) {
+  for (colName in names(data)) {
+    if(class(data[,colName]) == 'integer' | class(data[,colName]) == 'numeric') {
+     data[,colName] = scale(data[,colName])
+     }
+  }
+}
+
+data_numeric <- data[, 1:9] # generamos un dataframe solo con las numéricas
+```
+
+
+# Estudio de la distancia de las observaciones
+
+[//]: Los valores próximos a 0.5 señalan promedios de distancias entre vecinos los más próximos muy similares, por lo que agrupar no sería posible. Mientras que los valores próximos a 0 permiten rechazar la hipótesis de aleatoriedad y avalarían la presencia de dos o más clusters en el conjunto de observaciones.
+
+
+Para proceder al análisis cluster, previamente debemos estudiar la distancia entre las observaciones para saber si es adecuado dicho análisis. Las dos técnicas utilizadas para ello son: el estadístico de Hopkins y el método VAT.
+
+Mediante el estadístico de Hopkins estudiamos la distribución de las observaciones. El valor obtenido es 0.16 lo que significa, que por su proximidad a cero, rechazamos la hipótesis de aletoriedad y avalamos la presencia de dos o más clusters en el conjunto de observaciones.
+
+```{r, include = FALSE}
+# La Hipótesis nula es distribución uniforme o aleatoria (No existen grupos de observaciones). Queremos rechazar la hipótesis nula porque habrá posibilidad de agrupar.
+
+# Aplicamos una semilla para la reproducibilidad del test
+set.seed(123)
+  # Realizamos el test
+hopkins(data = data_numeric, n = nrow(data_numeric)-1)
+```
+
+Esta misma conclusión se puede estudiar de manera visual mediante el método VAT, donde el color azul implica poca distancia entre las observaciones y el color rojo, lejanía.
+
+
+```{r, out.width = '70%', fig.align = "center"}
+dist_data <- get_dist(data_numeric, method = 'pearson', stand = TRUE)
+fviz_dist(dist_data, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07", main = "Método VAT"), lab_size = 5) + labs(title = "Método VAT: Matriz de distancias")
+```
+# Número óptimo de clusters
+
+Para conocer cuál es el número óptimo de clusters utilizamos el paquete NbClust. Este combina los distintos número de clusters, medidas de distancia y métodos de clustering, para determinar el número óptimo de clusters. Como se ve representado a continuación, el número óptimo es 4.
+
+
+[//]: El paquete NbClust proporciona 30 índices para determinar el número de conglomerados y propone al usuario el mejor esquema de conglomerado a partir de los diferentes resultados obtenidos al variar todas las combinaciones de número de conglomerados, medidas de distancia y métodos de conglomerado.
+
+```{r, include = FALSE}
+# AQUI SI QUITAS EL include = FALSE, EN EL OUTPUT SALE LA INTERPRETACIÓN
+todos = NbClust(data_numeric, distance = "euclidean", min.nc = 2, max.nc = 10, method = "complete", index ="all")
+```
+```{r, results="hide", out.width = '70%', fig.align = "center"}
+fviz_nbclust(todos) + theme_minimal() + labs(x="Número k de clusters", y="Frecuencia")
+```
+
+El método de segmentación seleccionado es un método jerárquico aglomerativo: hclust. Esta decisión ha sido tomada ya que, a pesar de que el objetivo final es agrupar las observaciones en un máximo de 10 grupos, es preferible un método que agrupe las observaciones en virtud de su similaridad, sin grupos preestablecidos y obtener un número óptimo.
+
+A continuación se muestra un dendograma mediante hclust y método ward con cuatro clusters.
+
+```{r, fig.align="center"}
+data_eclust_j = eclust(data_numeric, FUNcluster = "hclust", hc_method = "ward.D2", stand = TRUE, hc_metric = "euclidean", nstart = 25, k = 4)
+fviz_dend(data_eclust_j, rect = TRUE)
+```
+
+Este sería entonces el tamaño de los grupos y la anchura de la silueta:
+
+#### ANOTACIÓN POST CLASE: LA SILUETA ES IMPORTANTE. QUEREMOS QUE SEA PRÓXIMA A 1. QUE SEA NEGATIVO ES MALO. Viendo la silueta vemos que el hclust es un poco caca. El diana (cambiarFUNcluster = "diana") es mejor en ese sentido. Sin embargo, te deja con un grupo de 5 observaciones que  luego nos comeríamos con patatas
+
+```{r, fig.show='hide', align = "center"}
+fviz_silhouette(eclust(data_numeric, FUNcluster = "hclust", hc_method = "ward.D2", stand = TRUE, hc_metric = "euclidean", nstart = 25, k = 4))
+```
+
+En un espacio de 3 dimensiones (al añadir el color), los clusters se representarían de la siguiente manera:
+
+```{r, out.width = '70%', fig.align = "center"}
+data_hclust = eclust(data_numeric, FUNcluster = "hclust", k = 4, stand=TRUE, hc_metric="euclidean", nstart=25)
+fviz_cluster(data_hclust)
+```
+
+# Conclusiones:
+
+Dados los 4 grupos definidos y que la capacidad máxima de las residencias es de 15 vehículos , la distribución será de la siguiente manera:
+
+- **Cluster 1**: Consta de 31 observaciones que se dividirá en dos grupos de 15 en las dos localidades de París. La observación restante es la observación número 23 que será agrupada con el cluster 3, ya que atendiendo a la representación anterior, podemos ver que hay mucha cercanía al centroide en las dos primeras dimensiones.
+
+- **Cluster 2**: Este cuenta con 22 observaciones, se dividirá en 2 grupos a partes iguales y estarán en las residencias de Suiza.
+
+- **Cluster 3**: Los 14 vehículos de este (más la observación 23 del cluster 1) estarán en la residencia de La Rochelle.
+
+- **Cluster 4**: Los 58 vehículos restantes se repartirán en dos grupos de 14 y otros dos grupos de 15 y sus residencias serán las tres residencias cercanas a Mónaco y Niza y por último, la residencia próxima a la frontera de Andorra.
+
+
+La única residencia de la cuál no se va a hacer uso es la que está situada en la isla de Córcega ya que el transporte de los coches a esta puede ser de gran coste. De esta manera, todos los vehículos quedarían distribuidos de manera eficiente en virtud de su similaridad y distancia en 9 residencias distintas. 
+
+
+
+
+
+
+
+
+

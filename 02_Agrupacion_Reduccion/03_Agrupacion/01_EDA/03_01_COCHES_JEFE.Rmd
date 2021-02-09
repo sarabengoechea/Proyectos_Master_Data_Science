@@ -1,0 +1,224 @@
+---
+title: "Los coches del jefe"
+author: "Sara Bengoechea Rodríguez"
+date: "11/23/2020"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+```{r libraries, include = FALSE}
+library("memisc") # para importar formato .sav
+library("lattice")
+library("MASS")
+library("Hmisc")
+library("tidyverse")
+library("corrplot")
+```
+
+
+```{r import data, include=FALSE}
+dataset <- data.frame(as.data.set(spss.system.file("tterreno.sav")))
+```
+
+## Introducción
+
+El presente informe tiene como objetivo estudiar las características más relevantes de un dataset formado por de 125 vehículos clásicos de un coleccionista, para posteriormente asignar dichos vehículos a 10 lugares distintos, agrupados de manera homogénea.
+
+Este dataset contine 125 observaciones y 15 variables que aportan información sobre el tipo de vehículo.Entre las 15 variables mencionadas, 3 de ellas son de tipo factor (categóricas) y el resto numéricas.
+
+
+```{r, include=FALSE}
+str(dataset) # Para ver de que tipo son las variables
+```
+
+## Tratamiento de valores nulos
+
+En total hay 83 valores nulos, y dado que el número de valores nulos es alto en comparación con el tamaño de nuestro dataset, debemos tratar dichos valores. Para ello, sustituiremos los valores nulos por la media o por la mediana, en función de si existen outliers o no en dicha variable. Para ello, primero realizamos un boxplot de todas las variables numéricas y vemos el número de NAs que hay en cada columna.
+
+
+```{r, out.height='30%', out.width='30%'}
+attach(dataset)
+
+boxplot(pvp, col = "light blue", main = "pvp")
+boxplot(cilindro, col = "light blue", main = "cilindro")
+boxplot(cc, col = "light blue", main = "cc")
+boxplot(potencia, col = "light blue", main = "potencia")
+boxplot(rpm, col = "light blue", main = "rpm")
+boxplot(peso, col = "light blue", main = "peso")
+boxplot(plazas, col = "light blue", main = "plazas")
+boxplot(cons90, col = "light blue", main = "cons90")
+boxplot(cons120, col = "light blue", main = "cons120")
+boxplot(consurb, col = "light blue", main = "consurb")
+boxplot(velocida, col = "light blue", main = "velocida")
+boxplot(acelerac, col = "light blue", main = "acelerac")
+
+
+```
+```{r, random code to explore the dataset, include = FALSE}
+table(is.na(dataset)) # Hay 83 valores nulos en total
+
+sapply(dataset, function(x) sum(is.na(x))) # Así ves los nulos por columna
+
+46/125 # 36.8% de las observaciones missing en acelerac
+
+unique(acel2) # Los valores que toman es que puede ser mayor o menor a 10 segundos
+
+summary(acelerac)
+
+```
+
+
+
+Mediante los boxplots, estudiamos la concentración de los valores alrededor de la media y podemos observar los outliers. Ya que la mayoría de variables tienen outliers, utilizaremos la mediana en los valores nulos excepto en las variables que no tienen valores atípicos ("peso" y "cons120").
+
+Es destacable el alto número de valores nulos(46) que hay en la columna "acelerac", que es una variable que informa sobre la aceleración en una escala del 0 a 100 segundos. Por otro lado, la variable "acel2" es una variable binaria que clasifica en dos grupos cada coche en función de si su aceleración está por encima o por debajo de los 10 segundos. Ya que esta última no tiene valores nulos y ambas aportan información similar, podemos eliminar la variable "acelerac".
+
+```{r, dealing with NAS, include= FALSE}
+attach(dataset)
+dataset["acelerac"] <- NULL # Quitamos acelerac porque tien muchos NAS
+dataset$peso[is.na(dataset$peso)] <- 1675 # Mean
+dataset$cons120[is.na(dataset$cons120)] <- 12.25 # Mean
+dataset$cons90[is.na(dataset$cons90)] <- 8.600 # Median
+dataset$consurb[is.na(dataset$consurb)] <- 12 # Median
+dataset$velocida[is.na(dataset$velocida)] <- 146.5 # Median
+```
+
+## Correlación entre variables
+
+A continuación, estudiamos las  correlaciones de las variables para poder decidir cuáles de ellas no son relevantes de cara a la futura segmentación.
+
+Algunas de las variables que tienen más correlación son "cons90" junto con "consurb" y con "cons120". Es por ello, que puesto que la información que aportan es muy similar, se rechaza la variable "cons90". Sin embargo, se dejan "consurb" porque "cons120" su correlación es mucho menor y la información que aportan no es tan similar.
+
+Por otro lado, existe una alta correlación entre potencia con las variables "cc" y "consurb", es por ello que también podríamos prescindir de la variable "potencia".
+
+```{r, out.width= "50%"}
+# corrplot(cor(dataset[,c(4:12)], method = 'pearson'),type = 'upper') # Sin precio
+corrplot(cor(dataset[,c(3:14)], method = 'pearson'),type = 'upper') # Con precio
+corrplot(round(cor(dataset[,c(3:12)], method = 'pearson'), 2),  method = "number", type = 'upper')
+```
+
+
+```{r, include = FALSE}
+corrplot(round(cor(dataset[,c(3:12)], method = 'pearson'), 2),  method = "number", type = 'upper')
+
+```
+
+
+```{r, include = FALSE}
+cor(cilindro, cc)# El número de cilindros con la cilindrada en metros cúbicos está relacionado en un 0.70
+cor(potencia,cilindro) # 0.73
+cor(cc, potencia) # 0.75
+cor(peso, cc) # 0.71
+
+cor(potencia, cons120) # La potencia y el consumo un poco caca la cor 0.57
+cor(rpm, potencia) # La potencia y el consumo una puta mierda la cor 0.08
+cor(peso, consurb) # 0.411
+cor(peso, plazas) # 0.4228939
+cor(velocida, cons120) # 0.43
+```
+
+## Variables categóricas
+
+Con respecto a las variables categóricas, hay dos que no vamos a tener en cuenta en nuestro estudio: marca y modelo. Esta decisión es tomada en base a dos criterios principalmente:
+
+  - El primero y más importante es porque el objetivo final es agrupar los coches para conservarlos en distintos lugares, por lo que el modelo o la marca del coche no son características influyentes.
+  - El segundo criterio es que hay 17 marcas distintas de coches y 111 modelos. Este número tan alto de clases hace su estudio y posterior agrupación mucho más difícil. 
+  
+
+La variable categórica restante es acel2, mencionada anteriormente. Para estudiar su relación con otras variables se han realizado boxplots con aquellas variables que intuitivamente, podría parecer que tendrían más relación. Se puede observar como eso ocurre con todas menos con el peso, donde se puede ver que aunque un coche sea de mayor peso, no significa que vaya a tener un menor tiempo de aceleración.
+  
+
+```{r,out.width= "52%"}
+
+
+boxplot(velocida~acel2, col = "light blue")
+boxplot(potencia~acel2, col = "light blue")
+boxplot(peso~acel2, col = "light blue")
+boxplot(cc~acel2, col = "light blue")
+
+# Cuando la aceleración es menor de 10 segundos, la velocidad máxima tiende a estar al rededor de los 180 km/h. Cuando la aceleración es mayor de 10 segs alrededor de 145 km/h.
+
+# Cuanto menos tarda en acelerar más velocidad posee el coche.
+```
+
+Por razones de negocio, ya que no se pretende vender dichos coches sino conservarlos en los lugares adecuados, el precio de venta no es relevante. Es por ello que la variable "pvp" se rechace también.
+
+```{r}
+dataset["marca"] <- NULL # Eliminamos del dataset las que hemos mencionado que no queremos
+dataset["modelo"] <- NULL
+dataset["pvp"] <- NULL
+dataset["potencia"] <- NULL
+
+```
+
+## Variables numéricas discretas
+
+Podemos ver cómo a mayor número de cilindros, mayores son las revoluciones por minuto del coche en cuestión. Sin embargo, el número de plazas no tiene relación con el peso, ya que los de mayor peso son los de 5 plazas.
+
+```{r, out.width= "50%"}
+
+ggplot(dataset, aes(x=cilindro, y=rpm)) +
+  geom_bar(stat="identity", fill="steelblue")
+
+ggplot(dataset, aes(x=plazas, y=peso)) +
+  geom_bar(stat="identity", fill="steelblue")
+
+
+```
+
+
+## Conclusiones
+
+Tras realizar un análisis exploratorio, hemos visto que para la asignación futura de los vehículos en distintos lugares debemos tener en cuenta 10 variables, de las cuales solo una es categórica y podríamos prescindir de un total de 5 variables.
+
+Las principales razones para rechazar esas 5 variables han sido el alto número de observaciones nulas, la no relevancia para la consecución de nuestro objetivo (conocimiento del negocio) y la alta correlación entre variables.
+
+
+
+```{r, include=FALSE}
+summary(dataset)
+unique(dataset$marca) # 17 marcas (difícil agrupación)
+unique(dataset$modelo) # 111 modelos (difícil agrupación)
+```
+
+
+
+```{r}
+# ESTO LO VOY A QUITAR
+# dataset_stats = data.frame(
+#  Med = apply(dataset_no_na, 2, median, na.rm = TRUE), # mediana
+ # Mean = apply(dataset_no_na, 2, mean, na.rm = TRUE)# media
+#)
+# dataset_stats = round(dataset_stats, 2)
+# dataset_stats["difference"] <- dataset_stats$Mean - dataset_stats$Med
+# dataset_stats
+```
+
+
+```{r, include= FALSE}
+# YO CREO QUE ESTO LO VOy A QUITAR
+# dataset_no_na <- dataset[rowSums(is.na(dataset)) == 0,] # Creamos un dataset sin NAS. Son 76 observaciones.
+
+
+# dataset_no_na
+```
+
+
+
+
+```{r exporting the cleaned dataset to my pc}
+# write.csv(dataset, file = "cleaned_dataset.csv")
+```
+
+
+```{r}
+```
+
+
