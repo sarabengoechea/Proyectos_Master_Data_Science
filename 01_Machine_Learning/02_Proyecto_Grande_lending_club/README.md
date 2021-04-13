@@ -1,6 +1,7 @@
 # Lending Club
 - Sara Bengoechea Rodríguez - sara.bengoechea@cunef.edu
 - Beatriz Cárdaba Rico - beatriz.cardaba@cunef.edu
+
 En este proyecto se desarrollan diferentes modelos de Machine Learning. El objetivo es realizar una clasificación y posteriro predicción de diferentes créditos en función si se han pagado por completo o no. Se usarán diferentes variables explicativas para determinar esta variable binaria('fully_paid' o diferente)
 Para ello se han realizado diferentes trasnformaciones y selecciones en las variables aportadas. Se ha creado un test set y un traning set para entrenar y evaluar los modelos definidos: null model, logit, svm, random forest y xgboost. 
 
